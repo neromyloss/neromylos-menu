@@ -100,18 +100,33 @@ var ID2NAME={
   horiatiki:"Χωριάτικη", prasini:"Πράσινη", froutosalata:"Φρουτοσαλάτα",
   yiaourti_granola:"Γιαούρτι Granola", yiaourti_frouta:"Γιαούρτι Φρούτα", pagoto:"Παγωτό"
 };
-var OUT=new Set();      // εξαντλημένα (κανονικοποιημένα ελληνικά ονόματα)
+var OUT=new Set();      // εξαντλημένα προϊόντα (κανονικοποιημένα ελληνικά ονόματα)
+var OUTOPT=new Set();   // εξαντλημένες επιλογές/γεύσεις (κανονικοποιημένες)
 var CURLANG="el";
 function norm(s){ return (s||"").toString().trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,""); }
+// Αφαιρεί εξαντλημένες γεύσεις από λίστα τύπου "A / B / C" μέσα στο desc
+function filterDesc(desc){
+  if(!desc || OUTOPT.size===0 || desc.indexOf("/")<0) return desc;
+  var parts=desc.split("/");
+  var kept=parts.filter(function(p){ return !OUTOPT.has(norm(p)); });
+  if(kept.length===parts.length) return desc;   // τίποτα δεν αφαιρέθηκε
+  return kept.map(function(p){ return p.trim(); }).join(" / ");
+}
 function loadStock(cb){
-  fetch(STOCK_DB+"/shops/"+STOCK_SHOP+"/stock.json")
-    .then(function(r){ return r.json(); })
-    .then(function(s){
-      var set=new Set();
-      if(s) Object.keys(s).forEach(function(id){ if(s[id] && ID2NAME[id]) set.add(norm(ID2NAME[id])); });
-      OUT=set; if(cb) cb();
-    })
-    .catch(function(){ if(cb) cb(); });
+  var base=STOCK_DB+"/shops/"+STOCK_SHOP;
+  Promise.all([
+    fetch(base+"/stock.json").then(function(r){return r.json();}).catch(function(){return null;}),
+    fetch(base+"/stockopt.json").then(function(r){return r.json();}).catch(function(){return null;})
+  ]).then(function(res){
+    var s=res[0], o=res[1];
+    var set=new Set();
+    if(s) Object.keys(s).forEach(function(id){ if(s[id] && ID2NAME[id]) set.add(norm(ID2NAME[id])); });
+    OUT=set;
+    var oset=new Set();
+    if(o) Object.keys(o).forEach(function(k){ var v=o[k]; oset.add(norm(typeof v==="string"?v:k)); });
+    OUTOPT=oset;
+    if(cb) cb();
+  }).catch(function(){ if(cb) cb(); });
 }
 function render(lang){
   CURLANG=lang;
@@ -148,7 +163,7 @@ function render(lang){
       if(it[0]!==ci) return;
       var elName=(it[1] && typeof it[1]==="object") ? (it[1].el||it[1].en) : it[1];
       if(OUT.has(norm(elName))) return;   // εξαντλημένο -> κρύψε το
-      var name=pick(it[1],lang), desc=pick(it[2],lang), price=it[3];
+      var name=pick(it[1],lang), desc=filterDesc(pick(it[2],lang)), price=it[3];
       var d=document.createElement("div"); d.className="item";
       var info='<div><div class="name">'+name+'</div>'+(desc?'<div class="desc">'+desc.replace(/\n/g,"<br>")+'</div>':'')+'</div>';
       d.innerHTML=info+'<div class="price">'+price+'</div>';
